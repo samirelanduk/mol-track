@@ -70,7 +70,10 @@ def bulk_create_if_not_exists(
         )
     else:
         existing_entities = set(
-            db.query(getattr(model_cls, name_attr)).filter(getattr(model_cls, name_attr).in_(input_keys)).all()
+            value
+            for (value,) in db.query(getattr(model_cls, name_attr))
+            .filter(getattr(model_cls, name_attr).in_(input_keys))
+            .all()
         )
 
     to_insert = []
@@ -83,12 +86,19 @@ def bulk_create_if_not_exists(
 
         if item_name in reserved_names:
             result.append(
-                {"name": item_name} | {"status": f"Failed: {item_name} is a reserved name and cannot be used"}
+                {"name": item_name}
+                | {
+                    "registration_status": "failed",
+                    "registration_error_message": f"{item_name} is a reserved name and cannot be used",
+                }
             )
             continue
 
         if item_key in existing_entities:
-            result.append(item.model_dump() | {"status": "Skipped: already exists"})
+            result.append(
+                item.model_dump()
+                | {"registration_status": "Skipped", "registration_error_message": f"{item_name} already exists"}
+            )
             continue
 
         try:
@@ -103,7 +113,9 @@ def bulk_create_if_not_exists(
             to_insert.append(data)
             inserted_input_items.append(item)
         except Exception as e:
-            result.append(item.model_dump() | {"status": f"Failed: {str(e)}"})
+            result.append(
+                item.model_dump() | {"registration_status": "failed", "registration_error_message": str(e.args[0])}
+            )
 
     if to_insert:
         try:
@@ -112,11 +124,13 @@ def bulk_create_if_not_exists(
             db.commit()
 
             for i, row in enumerate(db_result):
-                result.append(model_cls.model_validate(row[0]).model_dump() | {"status": "created"})
+                result.append(model_cls.model_validate(row[0]).model_dump() | {"registration_status": "success"})
         except Exception as e:
-            reason = f"Insert error: {str(e)}"
+            reason = f"Insert error: {str(e.args[0])}"
             for item in inserted_input_items:
-                result.append(item.model_dump() | {"status": f"Failed: {reason}"})
+                result.append(
+                    item.model_dump() | {"registration_status": "failed", "registration_error_message": f"{reason}"}
+                )
 
     return result
 
