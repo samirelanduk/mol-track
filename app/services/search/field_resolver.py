@@ -163,7 +163,7 @@ class FieldResolver:
     ) -> Dict[str, Any]:
         user_alias = f"u_{field_or_details}"
         join_sql = (
-            f"INNER JOIN {self.db_schema}.users {user_alias} "
+            f"LEFT JOIN {self.db_schema}.users {user_alias} "
             f"ON {table_config['alias']}.{field_or_details} = {user_alias}.id"
         )
         all_joins.add([join_sql], [user_alias])
