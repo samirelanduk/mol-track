@@ -138,7 +138,17 @@ def test_get_compounds_list(client, preload_schema, preload_compounds):
     assert abs(props["MolLogP"]["value_num"] - 1.083) < 1e-3
 
 
-def test_get_compound_by_corporate_id(client, preload_schema, preload_compounds):
+@pytest.mark.parametrize(
+    "fixtures",
+    [
+        pytest.param(("preload_schema", "preload_compounds"), id="with_schema_and_compounds"),
+        pytest.param(("preload_compounds",), id="with_compounds_only"),
+    ],
+)
+def test_get_compound_by_corporate_id(client, request, fixtures):
+    for fixture_name in fixtures:
+        request.getfixturevalue(fixture_name)
+
     response = client.get("/v1/compounds/")
     assert response.status_code == 200
     compounds = response.json()
