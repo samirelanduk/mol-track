@@ -138,27 +138,21 @@ def test_get_compounds_list(client, preload_schema, preload_compounds):
     assert abs(props["MolLogP"]["value_num"] - 1.083) < 1e-3
 
 
-@pytest.mark.parametrize(
-    "fixtures",
-    [
-        pytest.param(("preload_schema", "preload_compounds"), id="with_schema_and_compounds"),
-        pytest.param(("preload_compounds",), id="with_compounds_only"),
-    ],
-)
-def test_get_compound_by_corporate_id(client, request, fixtures):
-    for fixture_name in fixtures:
-        request.getfixturevalue(fixture_name)
-
+def _check_compound_basic_fields(client):
+    """Common logic to check compound fields (without or with properties)."""
     response = client.get("/v1/compounds/")
     assert response.status_code == 200
     compounds = response.json()
-    first_compound = compounds[1]
+    assert len(compounds) > 1, "Expected at least two compounds in response"
 
+    first_compound = compounds[1]
     corporate_compound_prop = next(
-        (p for p in first_compound["properties"] if p["name"] == "corporate_compound_id"), None
+        (p for p in first_compound["properties"] if p["name"] == "corporate_compound_id"),
+        None,
     )
     assert corporate_compound_prop is not None, "No Corporate Compound ID found"
     corporate_id = corporate_compound_prop["value_string"]
+
     response = client.get(f"/v1/compounds?property_value={corporate_id}")
     assert response.status_code == 200
 
@@ -171,8 +165,22 @@ def test_get_compound_by_corporate_id(client, request, fixtures):
     )
     assert result["is_archived"] is False
 
-    props = {p["name"]: p for p in result["properties"]}
+    return result
 
+
+@pytest.mark.usefixtures("preload_compounds")
+def test_get_compound_by_corporate_id_with_compounds_only(client):
+    register_response = _preload_compounds(client, BLACK_DIR / "compounds.csv")
+    assert register_response.status_code == 200
+
+    _check_compound_basic_fields(client)
+
+
+@pytest.mark.usefixtures("preload_schema", "preload_compounds")
+def test_get_compound_by_corporate_id_with_schema_and_compounds(client):
+    result = _check_compound_basic_fields(client)
+
+    props = {p["name"]: p for p in result["properties"]}
     assert props["EPA Compound ID"]["value_string"] == "EPA-002"
     assert props["CAS"]["value_string"] == "1478-61-1"
     assert props["Common Name"]["value_string"].strip() == "Bisphenol AF"
