@@ -3,6 +3,7 @@ from app.utils import enums
 from app import models
 from tests.conftest import BLACK_DIR, read_json, _preload_compounds
 from tests.utils.test_base_registrar import BaseRegistrarTest
+from tests.utils.test_mixins import CRUDTestsMixin, SynonymTestsMixin
 
 
 def extract_name_entity_type(items):
@@ -62,7 +63,7 @@ def test_schema(client, endpoint, schema_file, response_key, expected_keys, prel
         assert "additions" in response_data
 
 
-class TestCompoundsRegistrar(BaseRegistrarTest):
+class TestCompoundsRegistrar(BaseRegistrarTest, SynonymTestsMixin, CRUDTestsMixin):
     entity_name = "compounds"
     expected_properties = {
         "EPA Compound ID",

@@ -1,6 +1,7 @@
 import pytest
 from tests.conftest import _preload_batches
 from tests.utils.test_base_registrar import BaseRegistrarTest
+from tests.utils.test_mixins import CRUDTestsMixin, SynonymTestsMixin
 from app import models
 
 
@@ -14,7 +15,7 @@ def first_batch_with_synonyms(client, preload_schema, preload_batches):
     return first, synonyms
 
 
-class TestBatchesRegistrar(BaseRegistrarTest):
+class TestBatchesRegistrar(BaseRegistrarTest, SynonymTestsMixin, CRUDTestsMixin):
     entity_name = "batches"
     allow_put = False
     expected_properties = {
@@ -40,3 +41,7 @@ class TestBatchesRegistrar(BaseRegistrarTest):
     preload_func = staticmethod(_preload_batches)
     get_response_model = models.BatchResponse
     first_entity_fixture_name = "first_batch_with_synonyms"
+
+    @pytest.mark.skip(reason="PUT endpoint not implemented for batches")
+    def test_put_entity(self, *args, **kwargs):
+        pass
