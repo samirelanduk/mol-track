@@ -74,6 +74,15 @@ def truncate_all_except(db, schema, exclude_tables, keep_properties_keys=None):
     if tables:
         db.execute(text(f"TRUNCATE {', '.join(f'{schema}.{t}' for t in tables)} RESTART IDENTITY CASCADE;"))
 
+    # Manually reset sequences to start from 1. These sequences are not tied to any table columns,
+    # so they are not affected by `TRUNCATE ... RESTART IDENTITY` and must be reset explicitly.
+    sequences_to_reset = [
+        "moltrack.molregno_seq",
+        "moltrack.batch_regno_seq",
+    ]
+    for seq in sequences_to_reset:
+        db.execute(text(f"ALTER SEQUENCE {seq} RESTART WITH 1;"))
+
     if "properties" in exclude_tables and keep_properties_keys:
         db.execute(
             text(f"""

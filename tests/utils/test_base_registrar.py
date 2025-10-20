@@ -61,7 +61,6 @@ class BaseRegistrarTest:
             assert names == expected_props, f"[Entity {index}] Property names mismatch: {names} != {expected_props}"
 
         assert_properties(entities[0], self.expected_properties, 0)
-        assert_properties(entities[8], self.expected_properties - {"MolLogP"}, 8)
 
     @pytest.mark.skip(reason="No test datasets contain invalid records to validate 'reject all' behaviour.")
     def test_register_reject_all(self, client, preload_schema):

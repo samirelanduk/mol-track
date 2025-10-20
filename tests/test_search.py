@@ -247,5 +247,5 @@ def test_batch_search_null_eln_reference(client):
     assert content["total_count"] == 5
 
     returned_corporate_ids = [row["batches.details.corporate_batch_id"] for row in content["data"]]
-    expected_corporate_ids = ["DGB-000041", "DGB-000042", "DGB-000043", "DGB-000044", "DGB-000045"]
+    expected_corporate_ids = ["DGB-000001", "DGB-000002", "DGB-000003", "DGB-000004", "DGB-000005"]
     assert returned_corporate_ids == expected_corporate_ids
