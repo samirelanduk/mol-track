@@ -18,6 +18,21 @@ CREATE TABLE moltrack.users (
   updated_by uuid NOT NULL REFERENCES moltrack.users (id) DEFERRABLE INITIALLY DEFERRED
 );
 
+
+CREATE TABLE moltrack.api_keys (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_id uuid NOT NULL REFERENCES moltrack.users (id),
+    prefix text UNIQUE NOT NULL,
+    secret_hash text NOT NULL,
+    privileges text[] DEFAULT '{}'::text[] NOT NULL CHECK (
+      privileges <@ ARRAY['reader', 'writer', 'admin']
+    ),
+    status text NOT NULL DEFAULT 'active' check (status in ('active', 'revoked')),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz NULL,
+    ip_allowlist cidr[] NULL
+);
+
 -- Explains the meaning of a scalar property.
 CREATE TABLE moltrack.semantic_types (
   id serial PRIMARY KEY,

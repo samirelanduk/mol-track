@@ -4,11 +4,14 @@ import tempfile
 import shutil
 from fastapi import APIRouter, Body, FastAPI, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy import insert
+from sqlalchemy import insert, update
 from sqlalchemy.orm import Session
+from fastapi import status
 from typing import Dict, List, Optional, Type
 
 import yaml
+from app.services.auth.api_key_service import create_key
+from app.services.auth.auth_dependents import require_privileges
 from app.services.registrars.assay_result_registrar import AssayResultsRegistrar
 from app.services.registrars.assay_run_registrar import AssayRunRegistrar
 from app.services.registrars.batch_registrar import BatchRegistrar
@@ -16,6 +19,7 @@ from app.services.registrars.compound_registrar import CompoundRegistrar
 from app import models
 from app import crud
 from app.services.registrars.writer import StreamingResultWriter
+from app.setup.database import get_db
 from app.utils import enums
 from app.services.properties.property_service import PropertyService
 from app.services.search.engine import SearchEngine
@@ -23,7 +27,6 @@ from app.services.search.search_filter_builder import SearchFilterBuilder
 
 from sqlalchemy.sql import text
 
-from app.utils.logging_utils import logger
 from app.utils.admin_utils import admin
 from app.utils.chemistry_utils import get_molecule_standardization_config
 from app.utils.sql_utils import get_direct_fields
@@ -33,28 +36,15 @@ from app.utils.sql_utils import get_direct_fields
 try:
     # When imported as a package (for tests)
     from . import models
-    from .setup.database import SessionLocal
 except ImportError:
     # When run directly
     import app.models as models
-    from app.setup.database import SessionLocal
 
 # models.Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI(title="MolTrack API", description="API for managing chemical compounds and batches")
 router = APIRouter(prefix="/v1")
-
-
-# Dependency
-def get_db():
-    db = SessionLocal()
-    logger.debug(db.bind.url)
-    logger.debug("Database connection successful")
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def get_or_raise_exception(get_func, db, *args, not_found_msg=None, **kwargs):
@@ -65,9 +55,38 @@ def get_or_raise_exception(get_func, db, *args, not_found_msg=None, **kwargs):
     return item
 
 
+@router.post("/get-api-key")
+async def create_api_key(
+    owner_email: str,
+    ip_allowlist: Optional[List[str]] = Body(
+        default_factory=list, description="List of allowed IP addresses", embed=True
+    ),
+    db: Session = Depends(get_db),
+):
+    """Create a new API key. Returns full key string ONCE."""
+
+    owner_id = db.query(models.User.id).filter(models.User.email == owner_email).scalar()
+    if not owner_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"User with the email {owner_email} doesn't exist"
+        )
+
+    existing_key = db.query(models.ApiKey).filter(models.ApiKey.owner_id == owner_id).first()
+    if existing_key:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="API key already exists for this user")
+
+    privileges = [enums.AuthPrivileges.READER]
+    full_api_key = create_key(owner_id, privileges, ip_allowlist, db)
+
+    return {"api_key": full_api_key}
+
+
 @router.post("/auto-map-columns")
 def auto_map_columns(
-    entity_type: enums.EntityType = Body(...), columns: List[str] = Body(...), db: Session = Depends(get_db)
+    entity_type: enums.EntityType = Body(...),
+    columns: List[str] = Body(...),
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
 ) -> Dict[str, str]:
     registrar_map = {
         enums.EntityType.COMPOUND: CompoundRegistrar,
@@ -93,7 +112,11 @@ def get_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
 # === Schema endpoints for supplementary data like properties and synonyms ===
 # https://github.com/datagrok-ai/mol-track/blob/main/api_design.md#schema---wip
 @router.post("/schema/")
-def preload_schema(payload: models.SchemaPayload, db: Session = Depends(get_db)):
+def preload_schema(
+    payload: models.SchemaPayload,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
+):
     try:
         created_synonyms = crud.create_properties(db, payload.synonym_types)
         created_properties = crud.create_properties(db, payload.properties)
@@ -108,22 +131,41 @@ def preload_schema(payload: models.SchemaPayload, db: Session = Depends(get_db))
 
 
 @router.get("/schema/", response_model=List[models.PropertyRetrieve])
-def get_schema(db: Session = Depends(get_db)):
+def get_schema(
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     return crud.get_entities_by_entity_type(db)
 
 
 @router.get("/schema-direct/")
-def get_schema_direct():
+def get_schema_direct(
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     return get_direct_fields()
 
 
 @router.get("/schema/compounds", response_model=List[models.PropertyBase])
-def get_schema_compounds(db: Session = Depends(get_db)):
+def get_schema_compounds(
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     return crud.get_entities_by_entity_type(db, enums.EntityType.COMPOUND)
 
 
 @router.get("/schema/compounds/synonyms", response_model=List[models.SynonymTypeBase])
-def get_schema_compound_synonyms(db: Session = Depends(get_db)):
+def get_schema_compound_synonyms(
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     return crud.get_entities_by_entity_type(db, enums.EntityType.COMPOUND, crud.get_synonym_id(db))
 
 
@@ -137,14 +179,24 @@ def fetch_additions(db: Session):
 
 
 @router.get("/schema/batches", response_model=models.SchemaBatchResponse)
-def get_schema_batches(db: Session = Depends(get_db)):
+def get_schema_batches(
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     properties = crud.get_entities_by_entity_type(db, enums.EntityType.BATCH)
     additions = fetch_additions(db)
     return models.SchemaBatchResponse(properties=properties, additions=additions)
 
 
 @router.get("/schema/batches/synonyms", response_model=models.SchemaBatchResponse)
-def get_schema_batch_synonyms(db: Session = Depends(get_db)):
+def get_schema_batch_synonyms(
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     synonym_types = crud.get_entities_by_entity_type(db, enums.EntityType.BATCH, crud.get_synonym_id(db))
     additions = fetch_additions(db)
     return models.SchemaBatchResponse(synonym_types=synonym_types, additions=additions)
@@ -204,6 +256,7 @@ def register_compounds(
     error_handling: enums.ErrorHandlingOptions = Form(enums.ErrorHandlingOptions.reject_all),
     output_format: enums.OutputFormat = Form(enums.OutputFormat.json),
     db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
 ):
     return process_registration(
         CompoundRegistrar,
@@ -216,14 +269,26 @@ def register_compounds(
 
 
 @router.get("/compounds/", response_model=List[models.CompoundResponse])
-def get_compounds(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def get_compounds(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     compounds = crud.read_compounds(db, skip=skip, limit=limit)
     return compounds
 
 
 @router.get("/compounds", response_model=models.CompoundResponse)
 def get_compound_by_any_synonym(
-    property_value: str, property_name: Optional[str] = None, db: Session = Depends(get_db)
+    property_value: str,
+    property_name: Optional[str] = None,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
 ):
     return get_or_raise_exception(
         crud.get_compound_by_synonym, db, property_value, property_name, not_found_msg="Compound not found"
@@ -231,7 +296,14 @@ def get_compound_by_any_synonym(
 
 
 @router.get("/compounds/synonyms", response_model=List[models.PropertyWithValue])
-def get_compound_synonyms(property_value: str, property_name: Optional[str] = None, db: Session = Depends(get_db)):
+def get_compound_synonyms(
+    property_value: str,
+    property_name: Optional[str] = None,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     compound = get_or_raise_exception(
         crud.get_compound_by_synonym, db, property_value, property_name, not_found_msg="Compound not found"
     )
@@ -239,7 +311,14 @@ def get_compound_synonyms(property_value: str, property_name: Optional[str] = No
 
 
 @router.get("/compounds/properties", response_model=List[models.PropertyWithValue])
-def get_compound_properties(property_value: str, property_name: Optional[str] = None, db: Session = Depends(get_db)):
+def get_compound_properties(
+    property_value: str,
+    property_name: Optional[str] = None,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     compound = get_or_raise_exception(
         crud.get_compound_by_synonym, db, property_value, property_name, not_found_msg="Compound not found"
     )
@@ -251,12 +330,17 @@ def update_compound_by_id(
     corporate_compound_id: str,
     update_data: models.CompoundUpdate,
     db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
 ):
     return crud.update_compound(db, corporate_compound_id, "corporate_compound_id", update_data)
 
 
 @router.delete("/compounds/{corporate_compound_id}", response_model=models.Compound)
-def delete_compound_by_id(corporate_compound_id: str, db: Session = Depends(get_db)):
+def delete_compound_by_id(
+    corporate_compound_id: str,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
+):
     return crud.delete_compound(db, corporate_compound_id, "corporate_compound_id")
 
 
@@ -268,7 +352,11 @@ def clean_empty_values(d: dict) -> dict:
 # === Additions endpoints ===
 # https://github.com/datagrok-ai/mol-track/blob/main/api_design.md#additions
 @router.post("/additions/")
-def create_additions(csv_file: Optional[UploadFile] = File(None), db: Session = Depends(get_db)):
+def create_additions(
+    csv_file: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
+):
     if not csv_file:
         raise HTTPException(status_code=400, detail="CSV file is required.")
 
@@ -294,32 +382,62 @@ def create_additions(csv_file: Optional[UploadFile] = File(None), db: Session = 
 
 
 @router.get("/additions/", response_model=List[models.Addition])
-def read_additions_v1(db: Session = Depends(get_db)):
+def read_additions_v1(
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     return crud.get_additions(db)
 
 
 @router.get("/additions/salts", response_model=List[models.Addition])
-def read_additions_salts_v1(db: Session = Depends(get_db)):
+def read_additions_salts_v1(
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     return crud.get_additions(db, role=enums.AdditionsRole.SALT)
 
 
 @router.get("/additions/solvates", response_model=List[models.Addition])
-def read_additions_solvates_v1(db: Session = Depends(get_db)):
+def read_additions_solvates_v1(
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     return crud.get_additions(db, role=enums.AdditionsRole.SOLVATE)
 
 
 @router.get("/additions/{addition_id}", response_model=models.Addition)
-def read_addition_v1(addition_id: int, db: Session = Depends(get_db)):
+def read_addition_v1(
+    addition_id: int,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     return crud.get_addition_by_id(db, addition_id=addition_id)
 
 
 @router.put("/additions/{addition_id}", response_model=models.Addition)
-def update_addition_v1(addition_id: int, addition_update: models.AdditionUpdate, db: Session = Depends(get_db)):
+def update_addition_v1(
+    addition_id: int,
+    addition_update: models.AdditionUpdate,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
+):
     return crud.update_addition_by_id(db, addition_id, addition_update)
 
 
 @router.delete("/additions/{addition_id}", response_model=models.Addition)
-def delete_addition(addition_id: int, db: Session = Depends(get_db)):
+def delete_addition(
+    addition_id: int,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
+):
     dependent_batch_addition = crud.get_batch_addition_for_addition(db, addition_id)
     if dependent_batch_addition is not None:
         raise HTTPException(status_code=400, detail="Addition has dependent batches")
@@ -335,25 +453,47 @@ def register_batches(
     error_handling: enums.ErrorHandlingOptions = Form(enums.ErrorHandlingOptions.reject_all),
     output_format: enums.OutputFormat = Form(enums.OutputFormat.json),
     db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
 ):
     return process_registration(BatchRegistrar, file, mapping, error_handling, output_format, db)
 
 
 @router.get("/batches/", response_model=List[models.BatchResponse])
-def get_batches(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def get_batches(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     batches = crud.get_batches(db, skip=skip, limit=limit)
     return batches
 
 
 @router.get("/batches", response_model=models.BatchResponse)
-def get_batch_by_any_synonym(property_value: str, property_name: Optional[str] = None, db: Session = Depends(get_db)):
+def get_batch_by_any_synonym(
+    property_value: str,
+    property_name: Optional[str] = None,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     return get_or_raise_exception(
         crud.get_batch_by_synonym, db, property_value, property_name, not_found_msg="Batch not found"
     )
 
 
 @router.get("/batches/properties", response_model=List[models.PropertyWithValue])
-def get_batch_properties(property_value: str, property_name: Optional[str] = None, db: Session = Depends(get_db)):
+def get_batch_properties(
+    property_value: str,
+    property_name: Optional[str] = None,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     batch = get_or_raise_exception(
         crud.get_batch_by_synonym, db, property_value, property_name, not_found_msg="Batch not found"
     )
@@ -361,7 +501,14 @@ def get_batch_properties(property_value: str, property_name: Optional[str] = Non
 
 
 @router.get("/batches/synonyms", response_model=List[models.PropertyWithValue])
-def get_batch_synonyms(property_value: str, property_name: Optional[str] = None, db: Session = Depends(get_db)):
+def get_batch_synonyms(
+    property_value: str,
+    property_name: Optional[str] = None,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     batch = get_or_raise_exception(
         crud.get_batch_by_synonym, db, property_value, property_name, not_found_msg="Batch not found"
     )
@@ -369,7 +516,14 @@ def get_batch_synonyms(property_value: str, property_name: Optional[str] = None,
 
 
 @router.get("/batches/additions", response_model=List[models.BatchAddition])
-def get_batch_additions(property_value: str, property_name: Optional[str] = None, db: Session = Depends(get_db)):
+def get_batch_additions(
+    property_value: str,
+    property_name: Optional[str] = None,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     batch = get_or_raise_exception(
         crud.get_batch_by_synonym, db, property_value, property_name, not_found_msg="Batch not found"
     )
@@ -377,14 +531,22 @@ def get_batch_additions(property_value: str, property_name: Optional[str] = None
 
 
 @router.delete("/batches/{corporate_batch_id}", response_model=models.Batch)
-def delete_batch_by_any_synonym(corporate_batch_id: str, db: Session = Depends(get_db)):
+def delete_batch_by_any_synonym(
+    corporate_batch_id: str,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
+):
     return crud.delete_batch_by_synonym(db, corporate_batch_id, "corporate_batch_id")
 
 
 # === Assay data endpoints ===
 # https://github.com/datagrok-ai/mol-track/blob/main/api_design.md#assay-data-domain
 @router.post("/assays")
-def create_assays(payload: List[models.AssayCreateBase], db: Session = Depends(get_db)):
+def create_assays(
+    payload: List[models.AssayCreateBase],
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
+):
     all_properties = {}
     for p in crud.get_properties(db):
         all_properties.setdefault(p.name, []).append(p)
@@ -438,13 +600,26 @@ def create_assays(payload: List[models.AssayCreateBase], db: Session = Depends(g
 
 
 @router.get("/assays/", response_model=list[models.AssayResponse])
-def get_assays(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def get_assays(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     assays = crud.get_assays(db, skip=skip, limit=limit)
     return assays
 
 
 @router.get("/assays/{assay_id}", response_model=models.AssayResponse)
-def get_assay_by_id(assay_id: int, db: Session = Depends(get_db)):
+def get_assay_by_id(
+    assay_id: int,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     db_assay = crud.get_assay(db, assay_id=assay_id)
     if db_assay is None:
         raise HTTPException(status_code=404, detail="Assay not found")
@@ -458,18 +633,32 @@ def create_assay_runs(
     error_handling: enums.ErrorHandlingOptions = Form(enums.ErrorHandlingOptions.reject_all),
     output_format: enums.OutputFormat = Form(enums.OutputFormat.json),
     db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
 ):
     return process_registration(AssayRunRegistrar, file, mapping, error_handling, output_format, db)
 
 
 @router.get("/assay_runs/", response_model=list[models.AssayRunResponse])
-def get_assay_runs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def get_assay_runs(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     assay_runs = crud.get_assay_runs(db, skip=skip, limit=limit)
     return assay_runs
 
 
 @router.get("/assay_runs/{assay_run_id}", response_model=models.AssayRunResponse)
-def get_assay_run_by_id(assay_run_id: int, db: Session = Depends(get_db)):
+def get_assay_run_by_id(
+    assay_run_id: int,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     db_assay_run = crud.get_assay_run(db, assay_run_id=assay_run_id)
     if db_assay_run is None:
         raise HTTPException(status_code=404, detail="Assay run found")
@@ -483,6 +672,7 @@ def create_assay_results(
     error_handling: enums.ErrorHandlingOptions = Form(enums.ErrorHandlingOptions.reject_all),
     output_format: enums.OutputFormat = Form(enums.OutputFormat.json),
     db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
 ):
     return process_registration(AssayResultsRegistrar, file, mapping, error_handling, output_format, db)
 
@@ -494,7 +684,13 @@ def get_assay_results(skip: int = 0, limit: int = 100, db: Session = Depends(get
 
 
 @router.get("/validators/")
-def get_validators(entity: enums.EntityType, db: Session = Depends(get_db)):
+def get_validators(
+    entity: enums.EntityType,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     return crud.get_validators_for_entity(db, entity)
 
 
@@ -505,12 +701,17 @@ def register_validators(
     description: Optional[str] = Form(None, embed=True),
     expression: str = Form(..., embed=True),
     db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
 ):
     return crud.create_validator(db, entity, name, expression, description)
 
 
 @router.delete("/validators/{validator_name}")
-def delete_validator_by_name(validator_name: str, db: Session = Depends(get_db)):
+def delete_validator_by_name(
+    validator_name: str,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
+):
     return crud.delete_validator_by_name(db, validator_name)
 
 
@@ -518,6 +719,7 @@ def delete_validator_by_name(validator_name: str, db: Session = Depends(get_db))
 async def update_standardization_config(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.ADMIN)),
 ):
     filename = file.filename.lower()
     if not (filename.endswith(".yaml") or filename.endswith(".yml")):
@@ -547,11 +749,41 @@ async def update_standardization_config(
     return JSONResponse(content={"message": "Standardization configuration updated successfully."})
 
 
+@router.patch("/admin/api-key-privileges")
+def set_api_key_privileges(
+    user_email: str,
+    privileges: models.PrivilegesUpdateRequest,
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.ADMIN)),
+    db=Depends(get_db),
+):
+    user_id = db.query(models.User.id).filter(models.User.email == user_email).scalar()
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User with that email doesn't exist")
+
+    existing_key = db.query(models.ApiKey).filter(models.ApiKey.owner_id == user_id).first()
+    if not existing_key:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This user doesn't have an API key")
+
+    privileges = privileges.privileges
+
+    try:
+        stmt = update(models.ApiKey).where(models.ApiKey.owner_id == user_id).values(privileges=privileges)
+        db.execute(stmt)
+        db.commit()
+        return {"status": "success", "message": f"Privileges updated successfully to {privileges}"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+
 @router.patch("/admin/settings")
 def update_settings(
     name: enums.SettingName = Form(...),
     value: str = Form(...),
     db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.ADMIN)),
 ):
     def parse_int(value: str, field_name: str) -> int:
         try:
@@ -762,6 +994,9 @@ def search_compounds_advanced(
     output_format: enums.SearchOutputFormat = Body(enums.SearchOutputFormat.json),
     limit: Optional[int] = Body(None),
     db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
 ):
     """
     Endpoint for compound-level searches.
@@ -787,6 +1022,9 @@ def search_batches_advanced(
     output_format: enums.SearchOutputFormat = Body(enums.SearchOutputFormat.json),
     limit: Optional[int] = Body(None),
     db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
 ):
     """
     Endpoint for batch-level searches.
@@ -812,6 +1050,9 @@ def search_assay_results_advanced(
     output_format: enums.SearchOutputFormat = Body(enums.SearchOutputFormat.json),
     limit: Optional[int] = Body(None),
     db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
 ):
     """
     Endpoint for assay result-level searches.
@@ -837,6 +1078,9 @@ def search_assays_advanced(
     output_format: enums.SearchOutputFormat = Body(enums.SearchOutputFormat.json),
     limit: Optional[int] = Body(None),
     db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
 ):
     """
     Endpoint for assay-level searches.
@@ -862,6 +1106,9 @@ def search_assay_runs_advanced(
     output_format: enums.SearchOutputFormat = Body(enums.SearchOutputFormat.json),
     limit: Optional[int] = Body(None),
     db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
 ):
     """
     Endpoint for assay run-level searches.
@@ -880,7 +1127,13 @@ def search_assay_runs_advanced(
 
 
 @router.post("/search/generate-filter")
-def generate_search_filter(expression: str, db: Session = Depends(get_db)):
+def generate_search_filter(
+    expression: str,
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
     try:
         builder = SearchFilterBuilder(db)
         filter = builder.build_filter(expression)

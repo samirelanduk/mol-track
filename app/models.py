@@ -1,6 +1,7 @@
-from typing import Any, Dict, List, NamedTuple, Optional, Union, Literal, get_args
+from typing import Any, Dict, List, NamedTuple, Optional, Set, Union, Literal, get_args
 from pydantic import ConfigDict, field_validator, model_validator
-from sqlalchemy import Column, DateTime, Enum, CheckConstraint
+from sqlalchemy import Column, DateTime, Enum, CheckConstraint, String
+from sqlalchemy.dialects.postgresql import ARRAY, CIDR
 from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy.sql import func
 from app.utils import enums
@@ -40,6 +41,25 @@ class User(UserBase, table=True):
     )
     created_by: uuid.UUID = Field(nullable=False, default_factory=uuid.uuid4)
     updated_by: uuid.UUID = Field(nullable=False, default_factory=uuid.uuid4)
+
+
+class ApiKey(SQLModel, table=True):
+    __tablename__ = "api_keys"
+    __table_args__ = {"schema": DB_SCHEMA}
+
+    id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True, index=True)
+    owner_id: uuid.UUID = Field(nullable=False, default_factory=uuid.uuid4)
+    prefix: str = Field(index=True, unique=True, nullable=False)
+    secret_hash: str = Field(nullable=False)
+    privileges: List[enums.AuthPrivileges] = Field(sa_column=Column(ARRAY(String), nullable=True))
+    status: enums.APIKeyStatus = Field(sa_column=Column(Enum(enums.APIKeyStatus), nullable=False))
+    created_at: datetime = Field(sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False))
+    expires_at: Optional[datetime] = Field(default=None)
+    ip_allowlist: Optional[List[str]] = Field(sa_column=Column(ARRAY(CIDR()), nullable=True))
+
+
+class PrivilegesUpdateRequest(SQLModel):
+    privileges: Set[enums.AuthPrivileges]
 
 
 class Settings(SQLModel, table=True):

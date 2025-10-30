@@ -190,6 +190,17 @@ def lowercase_enum_values(enum_class, value):
     return None
 
 
+class AuthPrivileges(str, enum.Enum):
+    ADMIN = "admin"
+    READER = "reader"
+    WRITER = "writer"
+
+
+class APIKeyStatus(str, enum.Enum):
+    active = "active"
+    revoked = "revoked"
+
+
 class ValueQualifier(int, enum.Enum):
     EQUALS = 0
     LESS_THAN = 1
