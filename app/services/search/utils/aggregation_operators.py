@@ -22,6 +22,10 @@ class AggregationOperators:
         AggregationNumericOp.Q2.value: "PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY CAST({column} AS NUMERIC))",
         AggregationNumericOp.Q3.value: "PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY CAST({column} AS NUMERIC))",
         AggregationNumericOp.ARRAY_AGG.value: "ARRAY_AGG({column})",
+        # Note: AggregationStringOp.FIRST does not return the first value by insertion order.
+        # Instead, it returns the lexicographically smallest string, which is usually fine
+        # when we just want any value.
+        AggregationStringOp.FIRST.value: "MIN({column})",
         AggregationStringOp.CONCAT_ALL.value: "STRING_AGG({column}, ', ')",
         AggregationStringOp.CONCAT_UNIQUE.value: "STRING_AGG(DISTINCT {column}, ', ')",
         AggregationStringOp.MOST_FREQUENT.value: "MODE() WITHIN GROUP (ORDER BY {column}) ",

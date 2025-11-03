@@ -175,6 +175,7 @@ class AggregationStringOp(str, enum.Enum):
     CONCAT_ALL = "CONCAT ALL"
     CONCAT_UNIQUE = "CONCAT UNIQUE"
     MOST_FREQUENT = "MOST FREQUENT"
+    FIRST = "FIRST"
 
     @classmethod
     def _missing_(cls, value):
