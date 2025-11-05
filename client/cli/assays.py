@@ -45,10 +45,9 @@ class AssaysCLI(EntityCLI):
         @app.command("load")
         def load_assay_entities(
             file_path: str = typer.Argument(..., help="Path to the JSON file containing assay data"),
-            api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
             url: str = typer.Option(settings.API_BASE_URL, help="API base URL"),
         ):
-            self.load_assays(file_path, url, make_headers(api_key))
+            self.load_assays(file_path, url, make_headers())
 
 
 assays_cli = AssaysCLI()

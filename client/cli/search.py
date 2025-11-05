@@ -95,7 +95,6 @@ def create_search_command(app: typer.Typer, search_entities: dict):
         doc = info["doc"]
 
         def command_func(
-            api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
             output: str = typer.Option(
                 None,
                 "--output",
@@ -129,7 +128,7 @@ def create_search_command(app: typer.Typer, search_entities: dict):
                 filter,
                 input_file,
                 url,
-                make_headers(api_key),
+                make_headers(),
                 output_file,
                 output_format,
                 max_rows=max_rows,

@@ -15,7 +15,6 @@ directory_app = typer.Typer()
 @directory_app.command("load")
 def load_directory(
     directory_path: str = typer.Argument(..., help="Path to the directory containing files to load"),
-    api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
     error_handling: str = typer.Option(
         "reject_all", "--error-handling", "-e", help="Error handling strategy: reject_all or reject_row"
     ),
@@ -57,13 +56,13 @@ def load_directory(
 
         try:
             if loader_fn == load_assays_wrapper:
-                loader_fn(file_path=str(file_path), headers=make_headers(api_key), url=url)
+                loader_fn(file_path=str(file_path), headers=make_headers(), url=url)
             elif is_schema:
-                loader_fn(str(file_path), api_key, url)
+                loader_fn(str(file_path), url)
             else:
                 loader_fn(
                     csv_file=str(file_path),
-                    headers=make_headers(api_key),
+                    headers=make_headers(),
                     mapping_file=mapping_path,
                     url=url,
                     error_handling=error_handling,

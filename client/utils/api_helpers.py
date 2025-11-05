@@ -6,6 +6,7 @@ import typer
 from requests.exceptions import RequestException, Timeout
 
 
+from client.cli.auth import get_api_key
 from client.config import settings
 from client.utils.data_ingest import parse_arg
 from client.utils.display import display_search_csv, display_search_table
@@ -178,5 +179,5 @@ def handle_put_request(endpoint: str, headers: dict[str, str], json_data: Dict[s
     return handle_request(requests.put, endpoint, headers, json=json_data)
 
 
-def make_headers(api_key: str) -> dict[str, str]:
-    return {"x-api-key": api_key}
+def make_headers() -> dict[str, str]:
+    return {"x-api-key": get_api_key()}

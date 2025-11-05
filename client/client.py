@@ -13,6 +13,7 @@ from client.cli.database import database_app
 from client.cli.directory import directory_app
 from client.cli.search import search_app
 from client.cli.admin import admin_app
+from client.cli.auth import auth_app
 
 
 # Add parent directory to Python path for imports
@@ -31,6 +32,7 @@ app.add_typer(database_app, name="database", help="Database management commands"
 app.add_typer(directory_app, name="directory", help="Directory loading commands")
 app.add_typer(search_app, name="search", help="Search functionality")
 app.add_typer(admin_app, name="admin", help="Administrative functions")
+app.add_typer(auth_app, name="auth", help="Authentication commands (login/logout)")
 
 if __name__ == "__main__":
     app()
