@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import tempfile
 import shutil
 from fastapi import APIRouter, Body, FastAPI, Depends, File, Form, HTTPException, UploadFile
@@ -128,6 +129,41 @@ def preload_schema(
     except Exception as e:
         db.rollback()
         return {"status": "failed", "error": str(e)}
+
+
+@router.post("/schema/{property_id}/choices")
+def add_choices(
+    property_id: int,
+    new_choices: list[str],
+    db: Session = Depends(get_db),
+    auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
+):
+    try:
+        prop = crud.get_property_by_id(db, property_id)
+        if not prop:
+            raise HTTPException(status_code=404, detail=f"Property with ID '{property_id}' was not found.")
+
+        current_choices = []
+        if prop.choices:
+            try:
+                current_choices = json.loads(prop.choices)
+            except json.JSONDecodeError:
+                current_choices = []
+
+        updated_choices = list(dict.fromkeys(current_choices + new_choices))
+        prop.choices = json.dumps(updated_choices)
+        db.add(prop)
+        db.commit()
+        db.refresh(prop)
+
+        return {"status": "success", "id": prop.id, "choices": updated_choices}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected error occurred while updating choices for property {property_id}: {e}",
+        )
 
 
 @router.get("/schema/", response_model=List[models.PropertyRetrieve])

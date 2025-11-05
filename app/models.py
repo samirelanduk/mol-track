@@ -1,5 +1,6 @@
+import json
 from typing import Any, Dict, List, NamedTuple, Optional, Set, Union, Literal, get_args
-from pydantic import ConfigDict, field_validator, model_validator
+from pydantic import ConfigDict, field_validator, model_validator, validator
 from sqlalchemy import Column, DateTime, Enum, CheckConstraint, String
 from sqlalchemy.dialects.postgresql import ARRAY, CIDR
 from sqlmodel import SQLModel, Field, Relationship
@@ -268,6 +269,12 @@ class PropertyBase(SQLModel):
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
     )
+
+    @validator("choices", pre=True)
+    def serialize_choices(cls, v):
+        if isinstance(v, list):
+            return json.dumps(v)
+        return v
 
 
 class PropertyInput(PropertyBase):

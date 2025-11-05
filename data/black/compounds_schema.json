@@ -13,7 +13,8 @@
             "property_class": "declared",
             "value_type": "string",
             "unit": "",
-            "description": "The source of the compound, e.g. 'Enamine', 'E-Molecule', 'Sigma-Aldrich', 'ACME'"
+            "description": "The source of the compound, e.g. 'Enamine', 'E-Molecule', 'Sigma-Aldrich', 'ACME'",
+            "choices": ["ACME", "E-Molecule", "EPA", "Enamine", "Pharmaron", "Sigma-Aldrich", "WuXi"]
         }
     ],
     "synonym_types": [

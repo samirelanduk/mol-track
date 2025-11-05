@@ -26,6 +26,10 @@ def get_properties(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Property).offset(skip).limit(limit).all()
 
 
+def get_property_by_id(db: Session, property_id: int):
+    return db.get(models.Property, property_id)
+
+
 def bulk_create_if_not_exists(
     db: Session,
     model_cls: Type,
