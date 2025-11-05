@@ -48,8 +48,8 @@ SIMPLE_DIR = DATA_DIR / "simple"
 EXCLUDE_TABLES = ["users", "api_keys", "settings", "semantic_types", "properties"]
 KEEP_PROPERTIES_KEYS = ["corporate_compound_id", "corporate_batch_id"]
 SCHEMA_FILES = [
-    "batches_schema.json",
     "compounds_schema.json",
+    "batches_schema.json",
     "assays_schema.json",
     "assay_runs_schema.json",
     "assay_results_schema.json",

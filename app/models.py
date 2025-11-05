@@ -277,11 +277,15 @@ class PropertyBase(SQLModel):
         return v
 
 
+class PropertyResponse(PropertyBase):
+    id: int = Field(primary_key=True, index=True)
+
+
 class PropertyInput(PropertyBase):
     semantic_type_name: Optional[str] = Field(default=None)
 
 
-class PropertyRetrieve(PropertyBase):
+class PropertyRetrieve(PropertyResponse):
     semantic_type: Optional[SemanticTypeBase] = None
 
 
@@ -320,10 +324,6 @@ class SynonymTypeBase(PropertyInput):
         if v not in (None, ""):
             raise ValueError("SynonymType must have empty unit")
         return v
-
-
-class PropertyResponse(PropertyBase):
-    id: int = Field(primary_key=True, index=True)
 
 
 class AssayProperty(SQLModel, table=True):
