@@ -38,6 +38,7 @@ def send_csv_upload_request(
     csv_path: Path,
     url: str,
     endpoint: str,
+    headers: dict[str, str],
     entity_type: str,
     mapping_data: Optional[dict[str, any]] = None,
     error_handling: Optional[str] = None,
@@ -90,7 +91,7 @@ def send_csv_upload_request(
 
                 typer.echo(f"🚀 Sending {csv_path.name} to {url}{endpoint}...")
 
-                response = requests.post(f"{url}{endpoint}", files=files, data=data)
+                response = requests.post(f"{url}{endpoint}", files=files, data=data, headers=headers)
 
                 if response.status_code == 200:
                     typer.echo(f"✅ {entity_type.capitalize()} registered successfully!")

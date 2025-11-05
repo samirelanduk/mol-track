@@ -1,7 +1,7 @@
 import typer
 
 from client.config import settings
-from client.utils.api_helpers import run_advanced_search
+from client.utils.api_helpers import make_headers, run_advanced_search
 import click
 
 search_app = typer.Typer()
@@ -95,6 +95,7 @@ def create_search_command(app: typer.Typer, search_entities: dict):
         doc = info["doc"]
 
         def command_func(
+            api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
             output: str = typer.Option(
                 None,
                 "--output",
@@ -128,6 +129,7 @@ def create_search_command(app: typer.Typer, search_entities: dict):
                 filter,
                 input_file,
                 url,
+                make_headers(api_key),
                 output_file,
                 output_format,
                 max_rows=max_rows,

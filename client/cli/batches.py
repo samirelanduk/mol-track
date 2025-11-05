@@ -14,10 +14,10 @@ class BatchCLI(EntityCLI):
     def get_endpoint(self) -> str:
         return "v1/batches"
 
-    def fetch_entity(self, entity_id: str, url: str):
+    def fetch_entity(self, entity_id: str, url: str, headers: dict[str, str]):
         params = {"property_value": entity_id, "property_name": "corporate_batch_id"}
         endpoint = f"{url}/{self.get_endpoint()}"
-        return handle_get_request(endpoint, params=params)
+        return handle_get_request(endpoint, headers, params=params)
 
 
 batch_cli = BatchCLI()

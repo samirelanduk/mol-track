@@ -4,7 +4,7 @@ import typer
 
 from app import models
 from client.config import settings
-from client.utils.api_helpers import handle_delete_request, handle_get_request, handle_put_request
+from client.utils.api_helpers import handle_delete_request, handle_get_request, handle_put_request, make_headers
 from client.utils.data_ingest import report_csv_information, send_csv_upload_request
 from client.utils.display import display_additions_table
 from client.utils.file_utils import (
@@ -24,13 +24,14 @@ def register_additions_commands(app: typer.Typer):
     for cmd_name, (endpoint_suffix, description) in ADDITIONS_ENDPOINTS.items():
 
         def command_func(
+            api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
             url: str = settings.API_BASE_URL,
             output_format: str = typer.Option("table", "--output-format", "-o", help="Output format: table or json"),
             output_file: str = typer.Option(None, "--output-file", "-of", help="Path to output file"),
             _endpoint_suffix=endpoint_suffix,
         ):
             endpoint = f"{url}/v1/additions{_endpoint_suffix}"
-            data = handle_get_request(endpoint)
+            data = handle_get_request(endpoint, make_headers(api_key))
             output_data(data, output_format, output_file, display_additions_table)
 
         app.command(cmd_name, help=description)(command_func)
@@ -47,6 +48,7 @@ register_additions_commands(additions_list_app)
 def update_addition(
     addition_id: int = typer.Argument(..., help="Addition ID to update"),
     file_path: str = typer.Argument(..., help="Path to the JSON file containing addition update data"),
+    api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
     url: str = settings.API_BASE_URL,
 ):
     """
@@ -54,27 +56,29 @@ def update_addition(
     """
     # Load and validate the update data
     update_data = load_and_validate_json(file_path, models.AdditionUpdate)
-
     endpoint = f"{url}/v1/additions/{addition_id}"
-    handle_put_request(endpoint, json_data=update_data)
+    handle_put_request(endpoint, make_headers(api_key), json_data=update_data)
     typer.echo(f"✅ Addition with id {addition_id} has been successfully updated.")
 
 
 @additions_app.command("delete")
 def delete_addition(
-    addition_id: int = typer.Argument(..., help="Addition ID to delete"), url: str = settings.API_BASE_URL
+    addition_id: int = typer.Argument(..., help="Addition ID to delete"),
+    api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
+    url: str = settings.API_BASE_URL,
 ):
     """
     Hard delete the specified addition (only if no dependent batches exist).
     """
     endpoint = f"{url}/v1/additions/{addition_id}"
-    handle_delete_request(endpoint)
+    handle_delete_request(endpoint, make_headers(api_key))
     typer.echo(f"✅ Addition with id {addition_id} has been successfully deleted.")
 
 
 @additions_app.command("get")
 def get_addition(
     addition_id: int = typer.Argument(..., help="Addition ID to retrieve"),
+    api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
     url: str = settings.API_BASE_URL,
     output_format: str = typer.Option("table", "--output-format", "-o", help="Output format: table or json"),
     output_file: str = typer.Option(None, "--output-file", "-of", help="Path to output file"),
@@ -84,13 +88,14 @@ def get_addition(
     """
 
     endpoint = f"{url}/v1/additions/{addition_id}"
-    data = handle_get_request(endpoint)
+    data = handle_get_request(endpoint, make_headers(api_key))
     output_data(data, output_format, output_file, display_additions_table)
 
 
 @additions_app.command("load")
 def add_additions_from_csv(
     csv_file: str = typer.Argument(..., help="Path to the CSV file containing addition data"),
+    api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
     rows: Optional[int] = typer.Option(
         None, "--rows", "-r", help="Number of data rows to process (excludes header row)"
     ),
@@ -121,6 +126,7 @@ def add_additions_from_csv(
         csv_path=csv_path,
         url=url,
         endpoint="/v1/additions/",
+        headers=make_headers(api_key),
         entity_type="additions",
         csv_data=csv_data if rows is not None else None,
         save_errors=save_errors,

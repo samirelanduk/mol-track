@@ -3,7 +3,7 @@ import typer
 import json
 from pathlib import Path
 from client.config.settings import settings
-from client.utils.api_helpers import handle_get_request, handle_delete_request
+from client.utils.api_helpers import handle_get_request, handle_delete_request, make_headers
 from client.utils.file_utils import (
     validate_and_load_csv_data,
     write_result_to_file,
@@ -25,7 +25,7 @@ class EntityCLI(ABC):
         return f"v1/{self.entity_type}"
 
     @abstractmethod
-    def fetch_entity(self, entity_id: str, url: str):
+    def fetch_entity(self, entity_id: str, url: str, headers: dict[str, str]):
         """
         Fetch an entity from the server. Must be implemented by subclasses.
         """
@@ -34,6 +34,7 @@ class EntityCLI(ABC):
     def register_commands(self, app: typer.Typer):
         @app.command("list")
         def _list(
+            api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
             skip: int = typer.Option(0, "--skip", "-s", help="Number of records to skip"),
             limit: int = typer.Option(10, "--limit", "-l", help="Maximum number of records to return"),
             url: str = typer.Option(settings.API_BASE_URL, help="API base URL"),
@@ -41,7 +42,7 @@ class EntityCLI(ABC):
             output_file: str | None = typer.Option(None, "--output-file", "-of", help="Path to output file"),
         ):
             endpoint = f"{url}/{self.get_endpoint()}/?skip={skip}&limit={limit}"
-            data = handle_get_request(endpoint)
+            data = handle_get_request(endpoint, make_headers(api_key))
 
             if output_format == "json":
                 typer.echo(json.dumps(data, indent=2))
@@ -54,11 +55,12 @@ class EntityCLI(ABC):
             entity_id: str = typer.Argument(
                 ..., help=f"{self.entity_type[:-1].capitalize()} ID (friendly name) to retrieve"
             ),
+            api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
             url: str = typer.Option(settings.API_BASE_URL, help="API base URL"),
             output_format: str = typer.Option("table", "--output-format", "-o", help="Output format: table or json"),
             output_file: str | None = typer.Option(None, "--output-file", "-of", help="Path to output file"),
         ):
-            data = self.fetch_entity(entity_id, url)
+            data = self.fetch_entity(entity_id, url, make_headers(api_key))
 
             if output_format == "json":
                 typer.echo(json.dumps(data, indent=2))
@@ -76,15 +78,17 @@ class EntityCLI(ABC):
             entity_id: str = typer.Argument(
                 ..., help=f"{self.entity_type[:-1].capitalize()} ID (friendly name) to delete"
             ),
+            api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
             url: str = typer.Option(settings.API_BASE_URL, help="API base URL"),
         ):
             endpoint = f"{url}/{self.get_endpoint()}/{entity_id}"
-            handle_delete_request(endpoint)
+            handle_delete_request(endpoint, make_headers(api_key))
             typer.echo(f"✅ {self.entity_type[:-1].capitalize()} with ID {entity_id} deleted successfully.")
 
         @app.command("load")
         def _load(
             csv_file: Path = typer.Argument(..., help="Path to the CSV file containing entity data"),
+            api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
             mapping_file: Path | None = typer.Option(
                 None, "--mapping", "-m", help="Path to the JSON mapping file (optional)"
             ),
@@ -103,6 +107,7 @@ class EntityCLI(ABC):
                 mapping_file=mapping_file,
                 rows=rows,
                 url=url,
+                headers=make_headers(api_key),
                 error_handling=error_handling,
                 dry_run=dry_run,
                 save_errors=save_errors,
@@ -112,6 +117,7 @@ class EntityCLI(ABC):
         self,
         csv_file: Path,
         url: str,
+        headers: dict[str, str],
         mapping_file: Path | None = None,
         rows: int | None = None,
         error_handling: enums.ErrorHandlingOptions = enums.ErrorHandlingOptions.reject_all,
@@ -129,14 +135,12 @@ class EntityCLI(ABC):
             typer.echo("✅ Dry run completed successfully!")
             return
 
-        print("error handling", error_handling)
-        print(type(error_handling))
-
         send_csv_upload_request(
             csv_path=csv_path,
             mapping_data=mapping_data,
             url=url,
             endpoint=f"/{self.get_endpoint()}/",
+            headers=headers,
             error_handling=error_handling,
             entity_type=self.entity_type,
             csv_data=csv_data if rows else None,

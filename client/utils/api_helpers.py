@@ -57,7 +57,17 @@ def validate_search_request(level, output, filter_obj, aggregations, output_form
 
 
 def run_advanced_search(
-    level, endpoint, output, aggregations, filter, input_file, url, output_file, cli_output_format, max_rows=None
+    level,
+    endpoint,
+    output,
+    aggregations,
+    filter,
+    input_file,
+    url,
+    headers,
+    output_file,
+    cli_output_format,
+    max_rows=None,
 ):
     """
     Shared logic for advanced search commands.
@@ -77,7 +87,7 @@ def run_advanced_search(
             typer.secho("❌ Output file extention must match --output-format", fg=typer.colors.RED, err=True)
             raise typer.Exit(1)
 
-    response = requests.post(f"{url}{endpoint}", json=payload)
+    response = requests.post(f"{url}{endpoint}", json=payload, headers=headers)
     if response.status_code == 200:
         write_result_to_file(response, cli_output_format, output_file, parsed=False)
         if cli_output_format == "json":
@@ -137,9 +147,9 @@ def get_table_row_counts(specific_tables: Optional[list[str]] = None) -> dict[st
         return {row["table_name"]: row["row_count"] for row in result.mappings()}
 
 
-def handle_request(method: Callable, endpoint: str, **kwargs) -> Dict[str, Any]:
+def handle_request(method: Callable, endpoint: str, headers: dict[str, str], **kwargs) -> Dict[str, Any]:
     try:
-        response = method(endpoint, timeout=settings.REQUEST_TIMEOUT, **kwargs)
+        response = method(endpoint, headers=headers, timeout=settings.REQUEST_TIMEOUT, **kwargs)
         response.raise_for_status()
     except (RequestException, Timeout) as e:
         try:
@@ -156,13 +166,17 @@ def handle_request(method: Callable, endpoint: str, **kwargs) -> Dict[str, Any]:
         raise typer.Exit(code=1)
 
 
-def handle_get_request(endpoint: str, params: Optional[Dict[str, Any]] = None):
-    return handle_request(requests.get, endpoint, params=params)
+def handle_get_request(endpoint: str, headers: dict[str, str], params: Optional[Dict[str, Any]] = None):
+    return handle_request(requests.get, endpoint, headers, params=params)
 
 
-def handle_delete_request(endpoint: str):
-    return handle_request(requests.delete, endpoint)
+def handle_delete_request(endpoint: str, headers: dict[str, str]):
+    return handle_request(requests.delete, endpoint, headers)
 
 
-def handle_put_request(endpoint: str, json_data: Dict[str, Any]):
-    return handle_request(requests.put, endpoint, json=json_data)
+def handle_put_request(endpoint: str, headers: dict[str, str], json_data: Dict[str, Any]):
+    return handle_request(requests.put, endpoint, headers, json=json_data)
+
+
+def make_headers(api_key: str) -> dict[str, str]:
+    return {"x-api-key": api_key}

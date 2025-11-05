@@ -2,7 +2,7 @@ import requests
 import typer
 
 from client.config import settings
-from client.utils.api_helpers import print_response
+from client.utils.api_helpers import make_headers, print_response
 from client.utils.display import display_assays_table
 from client.utils.file_utils import load_and_validate_json
 from client.cli.shared import EntityCLI
@@ -26,17 +26,17 @@ class AssaysCLI(EntityCLI):
     def get_endpoint(self) -> str:
         return "v1/assays"
 
-    def fetch_entity(self, entity_id: str, url: str):
+    def fetch_entity(self, entity_id: str, url: str, headers: dict[str, str]):
         from client.utils.api_helpers import handle_get_request
 
-        return handle_get_request(f"{url}/{self.get_endpoint()}/{entity_id}")
+        return handle_get_request(f"{url}/{self.get_endpoint()}/{entity_id}", headers)
 
-    def load_assays(self, file_path: str, url: str):
+    def load_assays(self, file_path: str, url: str, headers: dict[str, str]):
         """
         Load assays from a JSON file using the /v1/assays endpoint.
         """
         assay_data = load_and_validate_json(file_path)
-        response = requests.post(f"{url}/{self.get_endpoint()}", json=assay_data)
+        response = requests.post(f"{url}/{self.get_endpoint()}", json=assay_data, headers=headers)
         print_response(response)
 
     def register_commands(self, app: typer.Typer):
@@ -45,9 +45,10 @@ class AssaysCLI(EntityCLI):
         @app.command("load")
         def load_assay_entities(
             file_path: str = typer.Argument(..., help="Path to the JSON file containing assay data"),
+            api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
             url: str = typer.Option(settings.API_BASE_URL, help="API base URL"),
         ):
-            self.load_assays(file_path, url)
+            self.load_assays(file_path, url, make_headers(api_key))
 
 
 assays_cli = AssaysCLI()
@@ -65,10 +66,10 @@ class AssayRunsCLI(EntityCLI):
     def get_endpoint(self) -> str:
         return "v1/assay_runs"
 
-    def fetch_entity(self, entity_id: str, url: str):
+    def fetch_entity(self, entity_id: str, url: str, headers: dict[str, str]):
         from client.utils.api_helpers import handle_get_request
 
-        return handle_get_request(f"{url}/{self.get_endpoint()}/{entity_id}")
+        return handle_get_request(f"{url}/{self.get_endpoint()}/{entity_id}", headers)
 
 
 assay_runs_cli = AssayRunsCLI()
@@ -86,10 +87,10 @@ class AssayResultsCLI(EntityCLI):
     def get_endpoint(self) -> str:
         return "v1/assay_results"
 
-    def fetch_entity(self, entity_id: str, url: str):
+    def fetch_entity(self, entity_id: str, url: str, headers: dict[str, str]):
         from client.utils.api_helpers import handle_get_request
 
-        return handle_get_request(f"{url}/{self.get_endpoint()}/{entity_id}")
+        return handle_get_request(f"{url}/{self.get_endpoint()}/{entity_id}", headers)
 
 
 assay_results_cli = AssayResultsCLI()

@@ -50,7 +50,7 @@ def database_clean(
 
     try:
         # Tables to preserve
-        tables_to_preserve = ["semantic_types", "settings", "users"]
+        tables_to_preserve = ["semantic_types", "settings", "users", "api_keys"]
 
         # Tables to clean in dependency order (child tables first)
         tables_in_dependency_order = reversed(SQLModel.metadata.sorted_tables)

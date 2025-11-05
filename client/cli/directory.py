@@ -6,6 +6,7 @@ from client.cli.batches import batch_cli
 from client.cli.compounds import compound_cli
 from client.cli.schema import add_schema_from_file
 from client.config import settings
+from client.utils.api_helpers import make_headers
 
 
 directory_app = typer.Typer()
@@ -14,6 +15,7 @@ directory_app = typer.Typer()
 @directory_app.command("load")
 def load_directory(
     directory_path: str = typer.Argument(..., help="Path to the directory containing files to load"),
+    api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
     error_handling: str = typer.Option(
         "reject_all", "--error-handling", "-e", help="Error handling strategy: reject_all or reject_row"
     ),
@@ -55,12 +57,13 @@ def load_directory(
 
         try:
             if loader_fn == load_assays_wrapper:
-                loader_fn(file_path=str(file_path), url=url)
+                loader_fn(file_path=str(file_path), headers=make_headers(api_key), url=url)
             elif is_schema:
-                loader_fn(str(file_path), url)
+                loader_fn(str(file_path), api_key, url)
             else:
                 loader_fn(
                     csv_file=str(file_path),
+                    headers=make_headers(api_key),
                     mapping_file=mapping_path,
                     url=url,
                     error_handling=error_handling,
@@ -73,8 +76,8 @@ def load_directory(
             if error_handling == "reject_all":
                 raise typer.Exit(1)
 
-    def load_assays_wrapper(file_path, url, **kwargs):
-        assays_cli.load_assays(file_path=file_path, url=url)
+    def load_assays_wrapper(file_path, url, headers, **kwargs):
+        assays_cli.load_assays(file_path=file_path, url=url, headers=headers)
 
     tasks = [
         ("compounds_schema.json", add_schema_from_file, None, True),

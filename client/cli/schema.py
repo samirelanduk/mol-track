@@ -1,7 +1,7 @@
 import json
 import typer
 import requests
-from client.utils.api_helpers import handle_get_request
+from client.utils.api_helpers import handle_get_request, make_headers
 from client.utils.display import display_properties_table
 from client.utils.file_utils import load_and_validate_json, write_result_to_file
 from app.models import SchemaPayload
@@ -24,6 +24,7 @@ def register_schema_commands(app: typer.Typer, endpoints: dict, synonym: bool = 
     for cmd_name, (endpoint_suffix, description) in endpoints.items():
 
         def command_func(
+            api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
             url: str = settings.API_BASE_URL,
             output_format: str = typer.Option("table", "--output-format", "-o", help="Output format: table or json"),
             max_rows: int | None = typer.Option(
@@ -33,7 +34,7 @@ def register_schema_commands(app: typer.Typer, endpoints: dict, synonym: bool = 
             _endpoint_suffix=endpoint_suffix,
         ):
             endpoint = f"{url}/v1/schema{_endpoint_suffix}"
-            get_schema_data(endpoint, output_format, max_rows, output_file, synonym=synonym)
+            get_schema_data(endpoint, make_headers(api_key), output_format, max_rows, output_file, synonym=synonym)
 
         app.command(cmd_name, help=description)(command_func)
 
@@ -50,6 +51,7 @@ register_schema_commands(schema_synonyms_app, SCHEMA_SYNONYMS_ENDPOINTS, synonym
 @schema_app.command("load")
 def add_schema_from_file(
     file_path: str = typer.Argument(..., help="Path to the JSON file containing schema data"),
+    api_key: str = typer.Option(..., "--api-key", "-k", help="API key for authentication"),
     url: str = settings.API_BASE_URL,
 ):
     """
@@ -89,7 +91,7 @@ def add_schema_from_file(
     # Send request to server
     try:
         typer.echo(f"Adding schema from file '{file_path}' to {url}...")
-        response = requests.post(f"{url}/v1/schema", json=schema_data)
+        response = requests.post(f"{url}/v1/schema", json=schema_data, headers=make_headers(api_key))
 
         if response.status_code == 200:
             result = response.json()
@@ -148,8 +150,8 @@ def add_schema_from_file(
         raise typer.Exit(1)
 
 
-def get_schema_data(endpoint, output_format, max_rows, output_file, synonym=False):
-    schema = handle_get_request(endpoint)
+def get_schema_data(endpoint, headers, output_format, max_rows, output_file, synonym=False):
+    schema = handle_get_request(endpoint, headers)
 
     if output_format == "json":
         typer.echo(f"Schema:\n{json.dumps(schema, indent=2)}")
