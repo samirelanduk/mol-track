@@ -11,9 +11,9 @@ from .compounds import (
 from .properties import (
     create_properties,
     get_properties,
-    get_property_by_id,
     get_entities_by_entity_type,
     get_synonym_id,
+    update_property_vocabulary,
 )
 
 from .batches import get_batches_by_compound, get_batches, get_batch_by_synonym, delete_batch_by_synonym

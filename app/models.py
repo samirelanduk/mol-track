@@ -826,3 +826,8 @@ LogicalNode.model_rebuild()
 class Token(NamedTuple):
     type: str
     value: Union[str, float, bool, None]
+
+
+class VocabularyUpdateRequest(SQLModel):
+    property_id: int
+    allowed_values: list[str]

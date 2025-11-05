@@ -1,3 +1,4 @@
+import json
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from typing import List, Optional
@@ -24,10 +25,6 @@ def create_properties(db: Session, properties: list[models.PropertyInput]) -> li
 
 def get_properties(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Property).offset(skip).limit(limit).all()
-
-
-def get_property_by_id(db: Session, property_id: int):
-    return db.get(models.Property, property_id)
 
 
 def bulk_create_if_not_exists(
@@ -210,3 +207,29 @@ def enrich_model(owner, response_class: Type[T], detail_attr: str, id_attr: str)
     if hasattr(owner, "properties"):
         resp.properties = enrich_properties(owner, detail_attr, id_attr)
     return resp
+
+
+def update_property_vocabulary(db: Session, property_id: int, allowed_values: list[str]) -> dict:
+    """
+    Add new allowed values to a property's controlled vocabulary.
+    Returns updated vocabulary.
+    """
+    prop = db.query(models.Property).filter(models.Property.id == property_id).first()
+    if not prop:
+        raise ValueError(f"Property with ID '{property_id}' not found.")
+
+    current_vocab = []
+    if prop.choices:
+        try:
+            current_vocab = json.loads(prop.choices)
+        except json.JSONDecodeError:
+            current_vocab = []
+
+    updated_vocab = list(dict.fromkeys(current_vocab + allowed_values))
+    prop.choices = json.dumps(updated_vocab)
+
+    db.add(prop)
+    db.commit()
+    db.refresh(prop)
+
+    return {"id": prop.id, "allowed_values": updated_vocab}

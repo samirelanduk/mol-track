@@ -1,6 +1,5 @@
 import csv
 import io
-import json
 import tempfile
 import shutil
 from fastapi import APIRouter, Body, FastAPI, Depends, File, Form, HTTPException, UploadFile
@@ -131,38 +130,23 @@ def preload_schema(
         return {"status": "failed", "error": str(e)}
 
 
-@router.post("/schema/{property_id}/choices")
-def add_choices(
-    property_id: int,
-    new_choices: list[str],
+@router.post("/schema/vocabulary")
+def add_to_vocabulary(
+    request: models.VocabularyUpdateRequest,
     db: Session = Depends(get_db),
     auth_scopes=Depends(require_privileges(enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)),
 ):
     try:
-        prop = crud.get_property_by_id(db, property_id)
-        if not prop:
-            raise HTTPException(status_code=404, detail=f"Property with ID '{property_id}' was not found.")
+        result = crud.update_property_vocabulary(db, request.property_id, request.allowed_values)
+        return {"status": "success", **result}
 
-        current_choices = []
-        if prop.choices:
-            try:
-                current_choices = json.loads(prop.choices)
-            except json.JSONDecodeError:
-                current_choices = []
-
-        updated_choices = list(dict.fromkeys(current_choices + new_choices))
-        prop.choices = json.dumps(updated_choices)
-        db.add(prop)
-        db.commit()
-        db.refresh(prop)
-
-        return {"status": "success", "id": prop.id, "choices": updated_choices}
-
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         db.rollback()
         raise HTTPException(
             status_code=500,
-            detail=f"An unexpected error occurred while updating choices for property {property_id}: {e}",
+            detail=f"Error updating vocabulary for property {request.property_id}: {e}",
         )
 
 
