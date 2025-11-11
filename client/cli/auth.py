@@ -1,5 +1,6 @@
 import getpass
 import typer
+from client.config import settings
 import keyring
 
 SERVICE_NAME = "moltrack-cli"
@@ -43,3 +44,12 @@ def logout():
 def show():
     key = get_api_key()
     typer.echo(f"Stored API key: {key}")
+
+
+def global_api_key_option(
+    api_key: str = typer.Option(None, "--api-key", "-k", help="API key for authentication (overrides stored key)"),
+):
+    if api_key:
+        settings.API_KEY = api_key
+    else:
+        settings.API_KEY = get_api_key()

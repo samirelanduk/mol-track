@@ -13,7 +13,7 @@ from client.cli.database import database_app
 from client.cli.directory import directory_app
 from client.cli.search import search_app
 from client.cli.admin import admin_app
-from client.cli.auth import auth_app
+from client.cli.auth import auth_app, global_api_key_option
 
 
 # Add parent directory to Python path for imports
@@ -22,7 +22,7 @@ parent_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(parent_dir))
 
 
-app = typer.Typer()
+app = typer.Typer(callback=global_api_key_option)
 app.add_typer(schema_app, name="schema", help="Schema management commands")
 app.add_typer(compound_app, name="compounds", help="Compound management commands")
 app.add_typer(batch_app, name="batches", help="Batch management commands")
