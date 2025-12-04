@@ -793,14 +793,11 @@ class Aggregation(SQLModel):
         return validate_field(v)
 
 
-class SearchRequest(SQLModel):
-    """Main search request model with recursive filter structure"""
-
-    level: Level
+class BaseSearchRequest(SQLModel):
     output: List[str]  # Columns to return
     aggregations: Optional[List[Aggregation]] = Field(default_factory=list)
     filter: Optional[Filter] = None
-    output_format: enums.SearchOutputFormat
+    output_format: enums.SearchOutputFormat = enums.SearchOutputFormat.json
     limit: Optional[int] = None
 
     @field_validator("output")
@@ -808,6 +805,12 @@ class SearchRequest(SQLModel):
         if not v:
             raise ValueError("Output must specify at least one column")
         return v
+
+
+class SearchRequest(BaseSearchRequest):
+    """Main search request model with recursive filter structure"""
+
+    level: Level
 
 
 class SearchResponse(SQLModel):

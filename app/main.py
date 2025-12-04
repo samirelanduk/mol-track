@@ -4,6 +4,7 @@ import tempfile
 import shutil
 from fastapi import APIRouter, Body, FastAPI, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy import insert, update
 from sqlalchemy.orm import Session
 from fastapi import status
@@ -1008,11 +1009,7 @@ def advanced_search(request: models.SearchRequest, db: Session = Depends(get_db)
 
 @router.post("/search/compounds")
 def search_compounds_advanced(
-    output: List[str] = Body(...),
-    aggregations: Optional[List[models.Aggregation]] = Body([]),
-    filter: Optional[models.Filter] = Body(None),
-    output_format: enums.SearchOutputFormat = Body(enums.SearchOutputFormat.json),
-    limit: Optional[int] = Body(None),
+    request: models.BaseSearchRequest,
     db: Session = Depends(get_db),
     auth_scopes=Depends(
         require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
@@ -1025,22 +1022,18 @@ def search_compounds_advanced(
     """
     request = models.SearchRequest(
         level=enums.SearchEntityType.COMPOUNDS.value,
-        output=output,
-        filter=filter,
-        output_format=output_format,
-        aggregations=aggregations,
-        limit=limit,
+        output=request.output,
+        filter=request.filter,
+        output_format=request.output_format,
+        aggregations=request.aggregations,
+        limit=request.limit,
     )
     return advanced_search(request, db)
 
 
 @router.post("/search/batches")
 def search_batches_advanced(
-    output: List[str] = Body(...),
-    aggregations: Optional[List[models.Aggregation]] = Body([]),
-    filter: Optional[models.Filter] = Body(None),
-    output_format: enums.SearchOutputFormat = Body(enums.SearchOutputFormat.json),
-    limit: Optional[int] = Body(None),
+    request: models.BaseSearchRequest,
     db: Session = Depends(get_db),
     auth_scopes=Depends(
         require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
@@ -1053,22 +1046,18 @@ def search_batches_advanced(
     """
     request = models.SearchRequest(
         level=enums.SearchEntityType.BATCHES.value,
-        output=output,
-        filter=filter,
-        output_format=output_format,
-        aggregations=aggregations,
-        limit=limit,
+        output=request.output,
+        filter=request.filter,
+        output_format=request.output_format,
+        aggregations=request.aggregations,
+        limit=request.limit,
     )
     return advanced_search(request, db)
 
 
 @router.post("/search/assay-results")
 def search_assay_results_advanced(
-    output: List[str] = Body(...),
-    aggregations: Optional[List[models.Aggregation]] = Body([]),
-    filter: Optional[models.Filter] = Body(None),
-    output_format: enums.SearchOutputFormat = Body(enums.SearchOutputFormat.json),
-    limit: Optional[int] = Body(None),
+    request: models.BaseSearchRequest,
     db: Session = Depends(get_db),
     auth_scopes=Depends(
         require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
@@ -1081,22 +1070,18 @@ def search_assay_results_advanced(
     """
     request = models.SearchRequest(
         level=enums.SearchEntityType.ASSAY_RESULTS.value,
-        output=output,
-        filter=filter,
-        output_format=output_format,
-        aggregations=aggregations,
-        limit=limit,
+        output=request.output,
+        filter=request.filter,
+        output_format=request.output_format,
+        aggregations=request.aggregations,
+        limit=request.limit,
     )
     return advanced_search(request, db)
 
 
 @router.post("/search/assays")
 def search_assays_advanced(
-    output: List[str] = Body(...),
-    aggregations: Optional[List[models.Aggregation]] = Body([]),
-    filter: Optional[models.Filter] = Body(None),
-    output_format: enums.SearchOutputFormat = Body(enums.SearchOutputFormat.json),
-    limit: Optional[int] = Body(None),
+    request: models.BaseSearchRequest,
     db: Session = Depends(get_db),
     auth_scopes=Depends(
         require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
@@ -1109,22 +1094,18 @@ def search_assays_advanced(
     """
     request = models.SearchRequest(
         level=enums.SearchEntityType.ASSAYS.value,
-        output=output,
-        filter=filter,
-        output_format=output_format,
-        aggregations=aggregations,
-        limit=limit,
+        output=request.output,
+        filter=request.filter,
+        output_format=request.output_format,
+        aggregations=request.aggregations,
+        limit=request.limit,
     )
     return advanced_search(request, db)
 
 
 @router.post("/search/assay-runs")
 def search_assay_runs_advanced(
-    output: List[str] = Body(...),
-    aggregations: Optional[List[models.Aggregation]] = Body([]),
-    filter: Optional[models.Filter] = Body(None),
-    output_format: enums.SearchOutputFormat = Body(enums.SearchOutputFormat.json),
-    limit: Optional[int] = Body(None),
+    request: models.BaseSearchRequest,
     db: Session = Depends(get_db),
     auth_scopes=Depends(
         require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
@@ -1137,13 +1118,27 @@ def search_assay_runs_advanced(
     """
     request = models.SearchRequest(
         level=enums.SearchEntityType.ASSAY_RUNS.value,
-        output=output,
-        filter=filter,
-        output_format=output_format,
-        aggregations=aggregations,
-        limit=limit,
+        output=request.output,
+        filter=request.filter,
+        output_format=request.output_format,
+        aggregations=request.aggregations,
+        limit=request.limit,
     )
     return advanced_search(request, db)
+
+
+@router.post("/search/validate")
+def validate_search_query(
+    body: dict = Body(...),
+    auth_scopes=Depends(
+        require_privileges(enums.AuthPrivileges.READER, enums.AuthPrivileges.WRITER, enums.AuthPrivileges.ADMIN)
+    ),
+):
+    try:
+        models.SearchRequest.model_validate(body)
+        return {"valid": True}
+    except ValidationError:
+        return {"valid": False}
 
 
 @router.post("/search/generate-filter")
@@ -1157,7 +1152,6 @@ def generate_search_filter(
     try:
         builder = SearchFilterBuilder(db)
         filter = builder.build_filter(expression)
-
         return filter
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
